@@ -5,12 +5,12 @@ import * as path from "path";
 const prisma = new PrismaClient();
 
 /**
- * Transform Analytics_Test_Data.json into invoice data
- * The source file has complex nested structure from AI/OCR invoice processing
+ * Enhanced seed script - Import ALL 50 documents with full metadata
+ * Preserves: departments, organizations, users, confidence scores, file paths
  */
 
 async function main() {
-  console.log("🌱 Starting database seed from Analytics_Test_Data.json...");
+  console.log("🌱 Starting FULL database seed from Analytics_Test_Data.json...");
 
   const dataPath = path.join(process.cwd(), "../../data/Analytics_Test_Data.json");
 
@@ -21,6 +21,7 @@ async function main() {
 
   const rawData: any[] = JSON.parse(fs.readFileSync(dataPath, "utf-8"));
   console.log(`📦 Found ${rawData.length} invoice documents to process`);
+  console.log(`🎯 Processing ALL documents with full metadata preservation...\n`);
 
   // Create a default customer
   const customer = await prisma.customer.upsert({
@@ -36,10 +37,13 @@ async function main() {
   });
 
   const vendorMap = new Map<string, string>();
+  const processedInvoiceNumbers = new Set<string>();
+  
   let vendorCount = 0;
   let invoiceCount = 0;
   let lineItemCount = 0;
   let skippedCount = 0;
+  let duplicateCount = 0;
 
   const categories = [
     "Operations",
@@ -51,7 +55,7 @@ async function main() {
   ];
   const statuses = ["paid", "pending", "overdue"];
 
-  for (let i = 0; i < Math.min(rawData.length, 100); i++) {
+  for (let i = 0; i < rawData.length; i++) {
     const item = rawData[i];
 
     try {
@@ -67,25 +71,43 @@ async function main() {
       const amountData = extractedData.amount?.value;
       const paymentData = extractedData.payment?.value;
 
-      // Get invoice number
-      const invoiceNumber =
+      // Get invoice number - make it unique using document ID
+      const baseInvoiceNumber =
         invoiceData?.invoiceId?.value ||
-        invoiceData?.invoiceNumber?.value ||
-        `INV-${Date.now()}-${i}`;
+        invoiceData?.invoiceNumber?.value;
+      
+      // Use document ID to ensure uniqueness if invoice number exists
+      const invoiceNumber = baseInvoiceNumber 
+        ? `${baseInvoiceNumber}-${item._id?.slice(0, 8) || i}`
+        : `INV-${item._id || i}`;
+      
+      // Skip if already processed this exact document ID
+      const documentKey = `${item._id}-${invoiceNumber}`;
+      if (processedInvoiceNumbers.has(documentKey)) {
+        duplicateCount++;
+        continue;
+      }
+      
+      processedInvoiceNumbers.add(documentKey);
 
       // Get vendor name
       const vendorName =
         vendorData?.vendorName?.value || vendorData?.name?.value || `Vendor ${i + 1}`;
 
-      // Get or create vendor
-      let vendorId = vendorMap.get(vendorName);
-      if (!vendorId) {
+      // Get or create vendor with full metadata
+      let vendorId: string;
+      const cachedVendorId = vendorMap.get(vendorName);
+      
+      if (cachedVendorId) {
+        vendorId = cachedVendorId;
+      } else {
         const existingVendor = await prisma.vendor.findFirst({
           where: { name: vendorName },
         });
 
         if (existingVendor) {
           vendorId = existingVendor.id;
+          vendorMap.set(vendorName, vendorId);
         } else {
           const vendor = await prisma.vendor.create({
             data: {
@@ -93,27 +115,43 @@ async function main() {
               email: vendorData?.email?.value || vendorData?.vendorEmail?.value,
               phone: vendorData?.phone?.value || vendorData?.vendorPhone?.value,
               address: vendorData?.vendorAddress?.value || vendorData?.address?.value,
+              taxId: vendorData?.vendorTaxId?.value || vendorData?.taxId?.value,
+              partyNumber: vendorData?.vendorPartyNumber?.value || vendorData?.partyNumber?.value,
             },
           });
           vendorId = vendor.id;
           vendorCount++;
+          vendorMap.set(vendorName, vendorId);
         }
-        vendorMap.set(vendorName, vendorId);
       }
 
       // Get dates
       const invoiceDate = parseDate(invoiceData?.invoiceDate?.value) || new Date();
+      const deliveryDate = parseDate(invoiceData?.deliveryDate?.value);
       const dueDate =
         parseDate(paymentData?.dueDate?.value) ||
         new Date(invoiceDate.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
 
-      // Get amount
+      // Get amounts with better parsing
       const totalAmount = parseAmount(
         amountData?.totalAmount?.value ||
           amountData?.total?.value ||
           amountData?.grandTotal?.value ||
           Math.random() * 50000 + 1000
       );
+      const taxAmount = parseAmount(
+        amountData?.taxAmount?.value || 
+        amountData?.totalTax?.value ||
+        totalAmount * 0.19  // Default 19% VAT
+      );
+      const netAmount = parseAmount(
+        amountData?.netAmount?.value ||
+        amountData?.subtotal?.value ||
+        totalAmount - taxAmount
+      );
+
+      // Calculate confidence score from all fields
+      const confidenceScore = calculateAverageConfidence(extractedData);
 
       // Random status weighted towards paid
       const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
@@ -123,18 +161,34 @@ async function main() {
       // Random category
       const category = categories[Math.floor(Math.random() * categories.length)];
 
-      // Create invoice
+      // Create invoice with FULL metadata
       const invoice = await prisma.invoice.create({
         data: {
-          invoiceNumber: String(invoiceNumber),
+          invoiceNumber,
           vendorId,
           customerId: customer.id,
           date: invoiceDate,
           dueDate,
+          deliveryDate,
           totalAmount,
+          taxAmount,
+          netAmount,
           status,
           category,
-          notes: `Original file: ${item.name || "N/A"}`,
+          notes: `Processed from ${item.name || "N/A"}`,
+          
+          // Rich metadata from Analytics_Test_Data.json
+          documentId: item._id,
+          fileName: item.name || item.metadata?.originalFileName,
+          filePath: item.filePath,
+          fileType: item.fileType,
+          organizationId: item.organizationId || item.metadata?.organizationId,
+          departmentId: item.departmentId || item.metadata?.departmentId,
+          uploadedById: item.uploadedById || item.metadata?.uploadedBy,
+          templateId: item.metadata?.templateId,
+          templateName: item.metadata?.templateName,
+          isValidatedByHuman: item.isValidatedByHuman || false,
+          confidenceScore,
         },
       });
       invoiceCount++;
@@ -211,7 +265,31 @@ async function main() {
   console.log(`   👥 Customers created: 1`);
   console.log(`   🧾 Invoices created: ${invoiceCount}`);
   console.log(`   📝 Line items created: ${lineItemCount}`);
-  console.log(`   ⏭️  Skipped: ${skippedCount}`);
+  console.log(`   ⏭️  Skipped (no data): ${skippedCount}`);
+  console.log(`   🔄 Duplicates avoided: ${duplicateCount}`);
+}
+
+function calculateAverageConfidence(extractedData: any): number {
+  const confidences: number[] = [];
+  
+  // Helper to recursively extract confidence scores
+  const extractConfidences = (obj: any) => {
+    if (!obj || typeof obj !== 'object') return;
+    
+    if (obj.confidence) {
+      const conf = parseFloat(obj.confidence);
+      if (!isNaN(conf)) confidences.push(conf);
+    }
+    
+    if (obj.value && typeof obj.value === 'object') {
+      Object.values(obj.value).forEach(extractConfidences);
+    }
+  };
+  
+  extractConfidences(extractedData);
+  
+  if (confidences.length === 0) return 0.5; // Default 50% if no confidence scores
+  return confidences.reduce((a, b) => a + b, 0) / confidences.length;
 }
 
 function parseDate(dateStr: any): Date | null {

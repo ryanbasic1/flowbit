@@ -76,6 +76,60 @@ function generateSqlFromQuery(query: string): { sql: string; explanation: string
     };
   }
 
+  // Department spending
+  if (q.includes("department") && (q.includes("spend") || q.includes("cost") || q.includes("analytics"))) {
+    return {
+      sql: "SELECT departmentId, SUM(totalAmount) as totalSpend, COUNT(*) as invoiceCount, AVG(confidenceScore) as avgConfidence FROM Invoice WHERE departmentId IS NOT NULL GROUP BY departmentId ORDER BY totalSpend DESC",
+      explanation: "Breaking down spending by department with confidence scores",
+    };
+  }
+
+  // Confidence analysis
+  if (q.includes("confidence") || q.includes("accuracy") || q.includes("validation")) {
+    if (q.includes("low") || q.includes("review") || q.includes("check")) {
+      return {
+        sql: "SELECT invoiceNumber, v.name as vendor, totalAmount, confidenceScore, isValidatedByHuman FROM Invoice i JOIN Vendor v ON i.vendorId = v.id WHERE confidenceScore < 0.7 ORDER BY confidenceScore ASC LIMIT 20",
+        explanation: "Finding invoices with low confidence scores that need review",
+      };
+    }
+    return {
+      sql: "SELECT AVG(confidenceScore) as avgConfidence, MIN(confidenceScore) as minConfidence, MAX(confidenceScore) as maxConfidence, COUNT(CASE WHEN confidenceScore < 0.7 THEN 1 END) as lowConfCount FROM Invoice WHERE confidenceScore IS NOT NULL",
+      explanation: "Analyzing AI extraction confidence scores across all invoices",
+    };
+  }
+
+  // File/document queries
+  if (q.includes("file") || q.includes("document") || q.includes("pdf")) {
+    return {
+      sql: "SELECT fileName, filePath, v.name as vendor, totalAmount, templateName FROM Invoice i JOIN Vendor v ON i.vendorId = v.id WHERE filePath IS NOT NULL ORDER BY date DESC LIMIT 20",
+      explanation: "Finding invoice documents with file information",
+    };
+  }
+
+  // Organization analysis
+  if (q.includes("organization") && q.includes("spend")) {
+    return {
+      sql: "SELECT organizationId, SUM(totalAmount) as totalSpend, COUNT(*) as invoiceCount FROM Invoice WHERE organizationId IS NOT NULL GROUP BY organizationId ORDER BY totalSpend DESC",
+      explanation: "Breaking down spending by organization",
+    };
+  }
+
+  // Human validated
+  if (q.includes("validated") || q.includes("verified") || q.includes("human")) {
+    return {
+      sql: "SELECT invoiceNumber, v.name as vendor, totalAmount, confidenceScore, isValidatedByHuman FROM Invoice i JOIN Vendor v ON i.vendorId = v.id WHERE isValidatedByHuman = 1 ORDER BY date DESC",
+      explanation: "Finding invoices that have been validated by humans",
+    };
+  }
+
+  // Tax analysis
+  if (q.includes("tax") || q.includes("vat")) {
+    return {
+      sql: "SELECT SUM(taxAmount) as totalTax, SUM(totalAmount) as totalWithTax, SUM(netAmount) as totalNet FROM Invoice WHERE taxAmount IS NOT NULL",
+      explanation: "Analyzing tax amounts across all invoices",
+    };
+  }
+
   // Average invoice
   if (q.includes("average") || q.includes("avg")) {
     return {

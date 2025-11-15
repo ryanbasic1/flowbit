@@ -9,12 +9,14 @@ import {
   Building2,
   Settings,
   MessageSquare,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Invoice", href: "/invoices", icon: FileText },
+  { name: "Analytics", href: "/analytics", icon: BarChart3 },
   { name: "Other files", href: "/files", icon: FileText },
   { name: "Departments", href: "/departments", icon: Building2 },
   { name: "Users", href: "/users", icon: Users },
