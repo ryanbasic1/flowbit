@@ -1,0 +1,25 @@
+{
+  "name": "buchhaltung-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "db:migrate": "pnpm --filter @buchhaltung/db prisma migrate dev",
+    "db:seed": "pnpm --filter @buchhaltung/db seed",
+    "db:studio": "pnpm --filter @buchhaltung/db studio",
+    "vanna:dev": "cd services/vanna && uvicorn main:app --reload --port 8000",
+    "vanna:install": "cd services/vanna && pip install -r requirements.txt"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.0",
+    "prettier": "^3.1.0",
+    "eslint": "^8.54.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.10.0"
+}

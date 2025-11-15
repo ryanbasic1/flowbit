@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+.pnpm-debug.log*
+
+# Build outputs
+.next
+dist
+build
+*.tsbuildinfo
+
+# Environment
+.env
+.env*.local
+
+# Database
+*.db
+*.db-journal
+packages/db/dev.db
+packages/db/migrations
+
+# Python
+__pycache__
+*.pyc
+.venv
+venv
+*.egg-info
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Turbo
+.turbo

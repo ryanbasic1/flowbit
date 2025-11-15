@@ -1,0 +1,97 @@
+// This is your Prisma schema file
+// SQLite provider for local development, easily switchable to PostgreSQL for production
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Vendor model - companies/individuals who send invoices
+model Vendor {
+  id        String    @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+
+  @@index([name])
+}
+
+// Customer model - who the invoices are billed to
+model Customer {
+  id        String    @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+
+  @@index([name])
+}
+
+// Invoice model - main invoice entity
+model Invoice {
+  id            String     @id @default(uuid())
+  invoiceNumber String     @unique
+  vendorId      String
+  customerId    String
+  date          DateTime
+  dueDate       DateTime
+  totalAmount   Float
+  status        String     // "paid", "pending", "overdue", "draft"
+  category      String?    // "Operations", "Marketing", "Facilities", etc.
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  vendor        Vendor     @relation(fields: [vendorId], references: [id])
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  lineItems     LineItem[]
+  payments      Payment[]
+
+  @@index([vendorId])
+  @@index([customerId])
+  @@index([date])
+  @@index([dueDate])
+  @@index([status])
+}
+
+// LineItem model - individual items on an invoice
+model LineItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  description String
+  quantity    Float
+  unitPrice   Float
+  amount      Float
+  category    String? // Can be used for category-based analysis
+  
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+// Payment model - tracks payments against invoices
+model Payment {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  amount      Float
+  paymentDate DateTime
+  method      String?  // "bank_transfer", "card", "cash", etc.
+  reference   String?
+  createdAt   DateTime @default(now())
+  
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([paymentDate])
+}
